@@ -96,18 +96,46 @@ describe('Integration Tests: Get all posts by category', () => {
 });
 describe('Integration Tests: Get all featured posts', () => {
   it('Get all featured posts: Success', async () => {
-    const responseFeatured = await request(server).get('/api/posts/featured');
+    const featuredPosts = await Post.create([
+      createPostObject({
+        title: 'Featured Test Post 1',
+        isFeaturedPost: true,
+      }),
+      createPostObject({
+        title: 'Featured Test Post 2',
+        isFeaturedPost: true,
+      }),
+    ]);
 
-    expect(responseFeatured.status).toBe(HTTP_STATUS.OK);
-    expect(responseFeatured.body.length).toBeGreaterThan(1);
+    try {
+      const responseFeatured = await request(server).get('/api/posts/featured');
+
+      expect(responseFeatured.status).toBe(HTTP_STATUS.OK);
+      expect(responseFeatured.body.length).toBeGreaterThan(1);
+    } finally {
+      await Post.deleteMany({
+        _id: { $in: featuredPosts.map((post) => post._id) },
+      });
+    }
   });
 });
 describe('Integration Tests: Get all latest posts', () => {
   it('Get all latest posts: Success', async () => {
-    const responseLatest = await request(server).get('/api/posts/latest');
+    const latestPosts = await Post.create([
+      createPostObject({ title: 'Latest Test Post 1' }),
+      createPostObject({ title: 'Latest Test Post 2' }),
+    ]);
 
-    expect(responseLatest.status).toBe(HTTP_STATUS.OK);
-    expect(responseLatest.body.length).toBeGreaterThan(1);
+    try {
+      const responseLatest = await request(server).get('/api/posts/latest');
+
+      expect(responseLatest.status).toBe(HTTP_STATUS.OK);
+      expect(responseLatest.body.length).toBeGreaterThan(1);
+    } finally {
+      await Post.deleteMany({
+        _id: { $in: latestPosts.map((post) => post._id) },
+      });
+    }
   });
 });
 describe('Integration Tests: Update Post', () => {

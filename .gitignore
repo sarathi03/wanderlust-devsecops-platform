@@ -1,0 +1,6 @@
+
+# Local environment and generated files
+backend/.env
+backend/node_modules/
+backend/coverage/
+backend/tests/integration/controllers/posts-controller.test.js.backup
