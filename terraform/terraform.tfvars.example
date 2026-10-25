@@ -1,0 +1,5 @@
+aws_region       = "us-east-2"
+ami_id           = "REPLACE_WITH_VALID_AMI_FOR_YOUR_REGION"
+instance_type    = "t2.large"
+public_key_path  = "~/.ssh/id_rsa.pub"
+allowed_ssh_cidr = "REPLACE_WITH_YOUR_PUBLIC_IP/32"

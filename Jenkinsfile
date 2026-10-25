@@ -5,86 +5,88 @@ pipeline {
 
     environment {
         SONAR_HOME = tool 'Sonar'
+        BACKEND_IMAGE = 'sarathimohan/wanderlust-backend-beta'
+        FRONTEND_IMAGE = 'sarathimohan/wanderlust-frontend-beta'
     }
 
     parameters {
-        string(
-            name: 'FRONTEND_DOCKER_TAG',
-            defaultValue: '',
-            description: 'Docker image tag for the frontend'
-        )
-        string(
-            name: 'BACKEND_DOCKER_TAG',
-            defaultValue: '',
-            description: 'Docker image tag for the backend'
-        )
+        string(name: 'BACKEND_DOCKER_TAG', defaultValue: 'build-1', description: 'Backend image tag')
+        string(name: 'FRONTEND_DOCKER_TAG', defaultValue: 'build-1', description: 'Frontend image tag')
     }
 
     stages {
-
         stage('Validate Parameters') {
             steps {
                 script {
-                    if (!params.FRONTEND_DOCKER_TAG?.trim() ||
-                        !params.BACKEND_DOCKER_TAG?.trim()) {
-                        error('Please provide both FRONTEND_DOCKER_TAG and BACKEND_DOCKER_TAG.')
+                    if (!params.BACKEND_DOCKER_TAG?.trim() || !params.FRONTEND_DOCKER_TAG?.trim()) {
+                        error('Provide both BACKEND_DOCKER_TAG and FRONTEND_DOCKER_TAG.')
                     }
                 }
             }
         }
 
-        stage('Workspace Cleanup') {
+        stage('Checkout') {
             steps {
-                cleanWs()
+                git branch: 'main', url: 'https://github.com/sarathi03/wanderlust-devsecops-platform.git'
             }
         }
 
-        stage('Git: Code Checkout') {
+        stage('Install and Test Backend') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/sarathi03/wanderlust-devsecops-platform.git'
-            }
-        }
-
-        stage('Trivy: Filesystem Scan') {
-            steps {
-                sh '''
-                    trivy fs \
-                        --scanners vuln,misconfig \
-                        --format json \
-                        --output trivy-report.json \
-                        .
-                '''
-            }
-        }
-
-        stage('OWASP: Dependency Check') {
-            steps {
-                dependencyCheck(
-                    additionalArguments: '--scan . --format XML --format HTML',
-                    odcInstallation: 'DP-Check'
-                )
-
-                dependencyCheckPublisher(
-                    pattern: '**/dependency-check-report.xml'
-                )
-            }
-        }
-
-        stage('SonarQube: Code Analysis') {
-            steps {
-                withSonarQubeEnv('Sonar') {
+                dir('backend') {
                     sh '''
-                        "$SONAR_HOME/bin/sonar-scanner" \
-                            -Dsonar.projectKey=wanderlust \
-                            -Dsonar.projectName=wanderlust \
-                            -Dsonar.sources=.
+                        npm ci
+                        CI=true npm test -- --runInBand --watchAll=false
                     '''
                 }
             }
         }
 
-        stage('SonarQube: Quality Gate') {
+        stage('Install and Build Frontend') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                        npm ci
+                        npm run build
+                    '''
+                }
+            }
+        }
+
+        stage('Trivy Filesystem Scan') {
+            steps {
+                sh '''
+                    trivy fs --scanners vuln,misconfig \
+                      --format json --output trivy-report.json .
+                '''
+            }
+        }
+
+        stage('OWASP Dependency Check') {
+            steps {
+                dependencyCheck(
+                    additionalArguments: '--scan . --format XML --format HTML',
+                    odcInstallation: 'DP-Check'
+                )
+                dependencyCheckPublisher(pattern: '**/dependency-check-report.xml')
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('Sonar') {
+                    sh '''
+                        "$SONAR_HOME/bin/sonar-scanner" \
+                          -Dsonar.projectKey=wanderlust \
+                          -Dsonar.projectName=wanderlust \
+                          -Dsonar.sources=backend,frontend \
+                          -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/coverage/**
+                    '''
+                }
+            }
+        }
+
+        stage('SonarQube Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
@@ -92,69 +94,37 @@ pipeline {
             }
         }
 
-        stage('Exporting Environment Variables') {
-            parallel {
-
-                stage('Backend Environment Setup') {
-                    steps {
-                        dir('Automations') {
-                            sh 'bash updatebackendnew.sh'
-                        }
-                    }
-                }
-
-                stage('Frontend Environment Setup') {
-                    steps {
-                        dir('Automations') {
-                            sh 'bash updatefrontendnew.sh'
-                        }
-                    }
+        stage('Prepare Local Environment') {
+            steps {
+                dir('Automations') {
+                    sh 'bash updatebackendnew.sh'
+                    sh 'bash updatefrontendnew.sh'
                 }
             }
         }
 
-        stage('Docker: Build Images') {
+        stage('Build Docker Images') {
             steps {
-                dir('backend') {
-                    sh '''
-                        docker build \
-                            -t sarathimohan/wanderlust-backend-beta:${BACKEND_DOCKER_TAG} \
-                            .
-                    '''
-                }
-
-                dir('frontend') {
-                    sh '''
-                        docker build \
-                            -t sarathimohan/wanderlust-frontend-beta:${FRONTEND_DOCKER_TAG} \
-                            .
-                    '''
-                }
+                sh '''
+                    docker build -t "$BACKEND_IMAGE:$BACKEND_DOCKER_TAG" ./backend
+                    docker build -t "$FRONTEND_IMAGE:$FRONTEND_DOCKER_TAG" ./frontend
+                '''
             }
         }
 
-        stage('Docker: Push to Docker Hub') {
+        stage('Push Docker Images') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'docker',
-                        usernameVariable: 'DOCKERHUB_USER',
-                        passwordVariable: 'DOCKERHUB_TOKEN'
-                    )
-                ]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker',
+                    usernameVariable: 'DOCKERHUB_USER',
+                    passwordVariable: 'DOCKERHUB_TOKEN'
+                )]) {
                     sh '''
                         set +x
-
                         echo "$DOCKERHUB_TOKEN" | docker login \
-                            --username "$DOCKERHUB_USER" \
-                            --password-stdin
-
-                        docker push \
-                            sarathimohan/wanderlust-backend-beta:${BACKEND_DOCKER_TAG}
-
-                        docker push \
-                            sarathimohan/wanderlust-frontend-beta:${FRONTEND_DOCKER_TAG}
-
+                          --username "$DOCKERHUB_USER" --password-stdin
+                        docker push "$BACKEND_IMAGE:$BACKEND_DOCKER_TAG"
+                        docker push "$FRONTEND_IMAGE:$FRONTEND_DOCKER_TAG"
                         docker logout
                     '''
                 }
@@ -162,33 +132,6 @@ pipeline {
         }
     }
 
-/*
-AWS ENVIRONMENT SETUP — DISABLED FOR NOW
-
-stage('Exporting Environment Variables') {
-    parallel {
-        stage('Backend Environment Setup') {
-            steps {
-                script {
-                    dir('Automations') {
-                        sh 'bash updatebackendnew.sh'
-                    }
-                }
-            }
-        }
-
-        stage('Frontend Environment Setup') {
-            steps {
-                script {
-                    dir('Automations') {
-                        sh 'bash updatefrontendnew.sh'
-                    }
-                }
-            }
-        }
-    }
-}
-*/
     post {
         always {
             archiveArtifacts(

@@ -1,0 +1,40 @@
+services:
+  mongodb:
+    container_name: mongo-service
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  redis:
+    container_name: redis-service
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  backend:
+    container_name: wanderlust-backend
+    build: ./backend
+    env_file:
+      - ./backend/.env.docker
+    ports:
+      - "31100:8080"
+    depends_on:
+      - mongodb
+      - redis
+
+  frontend:
+    container_name: wanderlust-frontend
+    build: ./frontend
+    env_file:
+      - ./frontend/.env.docker
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:

@@ -1,0 +1,49 @@
+pipeline {
+    agent { label 'wanderlust-agent' }
+
+    parameters {
+        string(name: 'FRONTEND_DOCKER_TAG', defaultValue: '', description: 'Frontend image tag built by CI')
+        string(name: 'BACKEND_DOCKER_TAG', defaultValue: '', description: 'Backend image tag built by CI')
+    }
+
+    stages {
+        stage('Validate Tags') {
+            steps {
+                script {
+                    if (!params.FRONTEND_DOCKER_TAG?.trim() || !params.BACKEND_DOCKER_TAG?.trim()) {
+                        error('Both frontend and backend image tags are required.')
+                    }
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/sarathi03/wanderlust-devsecops-platform.git'
+            }
+        }
+
+        stage('Update Kubernetes Image Tags') {
+            steps {
+                sh '''
+                    sed -i "s|^[[:space:]]*image:.*wanderlust-backend-beta:.*|          image: sarathimohan/wanderlust-backend-beta:${BACKEND_DOCKER_TAG}|" kubernetes/backend.yaml
+                    sed -i "s|^[[:space:]]*image:.*wanderlust-frontend-beta:.*|          image: sarathimohan/wanderlust-frontend-beta:${FRONTEND_DOCKER_TAG}|" kubernetes/frontend.yaml
+                '''
+            }
+        }
+
+        stage('Commit and Push Manifests') {
+            steps {
+                withCredentials([gitUsernamePassword(credentialsId: 'github-cred', gitToolName: 'Default')]) {
+                    sh '''
+                        git config user.name "Jenkins"
+                        git config user.email "jenkins@localhost"
+                        git add kubernetes/backend.yaml kubernetes/frontend.yaml
+                        git diff --cached --quiet || git commit -m "Update Kubernetes image tags from CI"
+                        git push origin HEAD:main
+                    '''
+                }
+            }
+        }
+    }
+}
