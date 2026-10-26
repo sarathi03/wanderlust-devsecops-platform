@@ -6,10 +6,15 @@ metadata:
   labels:
     app: frontend
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -17,10 +22,31 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: sarathimohan/wanderlust-frontend-beta:build-1
+          # Updated automatically by the CD pipeline (scripts/update-image-tags.sh). Do not edit by hand.
+          # DOCKERHUB_USERNAME is a placeholder that the first CD run replaces with your username.
+          image: DOCKERHUB_USERNAME/wanderlust-frontend:initial
           ports:
-            - containerPort: 5173
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
 ---
+# NodePort: open in your browser at http://<any-eks-node-public-ip>:31000
 apiVersion: v1
 kind: Service
 metadata:
@@ -31,7 +57,7 @@ spec:
   selector:
     app: frontend
   ports:
-    - port: 5173
-      targetPort: 5173
+    - port: 80
+      targetPort: 80
       protocol: TCP
       nodePort: 31000

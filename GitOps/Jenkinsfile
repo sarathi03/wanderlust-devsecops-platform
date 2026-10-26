@@ -1,49 +1,110 @@
+// =====================================================================================
+// CD pipeline (Jenkins job: "Wanderlust-CD") - triggered by the CI pipeline
+//
+//   Validate tag -> Checkout main -> Update image tags in kubernetes/*.yaml
+//   -> Commit + push to GitHub -> (Argo CD sees the commit and deploys to EKS)
+//
+// This job never talks to Kubernetes. It only changes Git. Argo CD does the deployment.
+// =====================================================================================
 pipeline {
     agent { label 'wanderlust-agent' }
 
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()          // two CD runs must never push at the same time
+        buildDiscarder(logRotator(numToKeepStr: '15'))
+        timeout(time: 15, unit: 'MINUTES')
+    }
+
     parameters {
-        string(name: 'FRONTEND_DOCKER_TAG', defaultValue: '', description: 'Frontend image tag built by CI')
-        string(name: 'BACKEND_DOCKER_TAG', defaultValue: '', description: 'Backend image tag built by CI')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag built by the CI pipeline, e.g. 12-a1b2c3d')
+    }
+
+    environment {
+        DEPLOY_BRANCH = 'main'             // the branch Argo CD watches
     }
 
     stages {
-        stage('Validate Tags') {
+        stage('Validate Tag') {
             steps {
                 script {
-                    if (!params.FRONTEND_DOCKER_TAG?.trim() || !params.BACKEND_DOCKER_TAG?.trim()) {
-                        error('Both frontend and backend image tags are required.')
+                    if (!params.IMAGE_TAG?.trim()) {
+                        error('IMAGE_TAG is empty. This job is normally triggered by Wanderlust-CI.')
                     }
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} (${params.IMAGE_TAG})"
                 }
             }
         }
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/sarathi03/wanderlust-devsecops-platform.git'
+                checkout scm
+                // checkout scm leaves a "detached HEAD"; put us on a real local branch
+                // that matches the latest remote main, so we can commit and push.
+                sh 'git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"'
             }
         }
 
-        stage('Update Kubernetes Image Tags') {
+        stage('Update Kubernetes Manifests') {
             steps {
-                sh '''
-                    sed -i "s|^[[:space:]]*image:.*wanderlust-backend-beta:.*|          image: sarathimohan/wanderlust-backend-beta:${BACKEND_DOCKER_TAG}|" kubernetes/backend.yaml
-                    sed -i "s|^[[:space:]]*image:.*wanderlust-frontend-beta:.*|          image: sarathimohan/wanderlust-frontend-beta:${FRONTEND_DOCKER_TAG}|" kubernetes/frontend.yaml
-                '''
-            }
-        }
-
-        stage('Commit and Push Manifests') {
-            steps {
-                withCredentials([gitUsernamePassword(credentialsId: 'github-cred', gitToolName: 'Default')]) {
+                withCredentials([usernamePassword(credentialsId: 'docker',
+                                                  usernameVariable: 'DOCKERHUB_USER',
+                                                  passwordVariable: 'DOCKERHUB_TOKEN')]) {
                     sh '''
-                        git config user.name "Jenkins"
-                        git config user.email "jenkins@localhost"
-                        git add kubernetes/backend.yaml kubernetes/frontend.yaml
-                        git diff --cached --quiet || git commit -m "Update Kubernetes image tags from CI"
-                        git push origin HEAD:main
+                        bash scripts/update-image-tags.sh "$DOCKERHUB_USER" "$IMAGE_TAG" kubernetes
+                        echo "----- changes -----"
+                        git --no-pager diff -- kubernetes/
                     '''
                 }
             }
+        }
+
+        stage('Commit and Push to GitHub') {
+            steps {
+                // 'github-cred' = GitHub username + Personal Access Token (repo scope).
+                withCredentials([gitUsernamePassword(credentialsId: 'github-cred', gitToolName: 'Default')]) {
+                    sh '''
+                        git config user.name  "jenkins-cd"
+                        git config user.email "jenkins-cd@users.noreply.github.com"
+
+                        git add kubernetes/backend.yaml kubernetes/frontend.yaml
+                        if git diff --cached --quiet; then
+                            echo "Manifests already use tag $IMAGE_TAG - nothing to commit."
+                            exit 0
+                        fi
+
+                        # [skip ci] stops this commit from re-triggering the CI pipeline.
+                        git commit -m "cd: deploy image tag $IMAGE_TAG [skip ci]"
+
+                        # If someone pushed to main while we worked, replay our commit on top.
+                        git pull --rebase origin "$DEPLOY_BRANCH"
+                        git push origin "HEAD:$DEPLOY_BRANCH"
+                        echo "Pushed. Argo CD will detect commit $(git rev-parse --short HEAD) and deploy it."
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext(
+                to: '$DEFAULT_RECIPIENTS',
+                subject: "DEPLOYED: wanderlust ${params.IMAGE_TAG} (${env.JOB_NAME} #${env.BUILD_NUMBER})",
+                body: "Kubernetes manifests now point to image tag ${params.IMAGE_TAG}.\nArgo CD will sync it to EKS within ~3 minutes.\n\nBuild: ${env.BUILD_URL}",
+                attachLog: true
+            )
+        }
+        failure {
+            emailext(
+                to: '$DEFAULT_RECIPIENTS',
+                subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} (tag ${params.IMAGE_TAG})",
+                body: "The CD pipeline failed.\n\nBuild: ${env.BUILD_URL}\nConsole: ${env.BUILD_URL}console",
+                attachLog: true
+            )
+        }
+        cleanup {
+            cleanWs()
         }
     }
 }

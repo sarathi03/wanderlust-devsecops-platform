@@ -1,0 +1,40 @@
+# EKS cluster definition (eksctl). Create:  eksctl create cluster -f eks/cluster.yaml
+#                                   Delete:  eksctl delete cluster -f eks/cluster.yaml
+#
+# Before creating, check the version is supported (pick one in "standard support";
+# "extended support" versions cost 6x more for the control plane):
+#   aws eks describe-cluster-versions --region ap-south-1 \
+#     --query 'clusterVersions[].[clusterVersion,versionStatus]' --output table
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wanderlust
+  region: ap-south-1
+  version: "1.34"
+
+vpc:
+  # Nodes run in public subnets (they need public IPs for NodePort access),
+  # so a NAT gateway is not needed. Disabling it avoids a ~$0.06/hour charge.
+  nat:
+    gateway: Disable
+
+iam:
+  withOIDC: true
+
+managedNodeGroups:
+  - name: wanderlust-ng
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 3
+    volumeSize: 30
+    volumeType: gp3
+    privateNetworking: false
+    # Optional cost saving (~60-70% cheaper, AWS may reclaim nodes at short notice):
+    # spot: true
+    # instanceTypes: ["t3.medium", "t3a.medium"]   # use this instead of instanceType when spot: true
+    labels:
+      project: wanderlust
+    tags:
+      project: wanderlust

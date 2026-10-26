@@ -1,32 +1,10 @@
-# ------------------- Stage 1: Build Stage ------------------------------
-FROM node:21 AS frontend-builder
+FROM nginx:1.27-alpine
 
-# Set the working directory to /app
-WORKDIR /app
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY public/ /usr/share/nginx/html/
 
-# Copy the package.json and package-lock.json for dependency installation
-COPY package*.json ./
+# The CI pipeline passes the image tag here; the page displays it.
+ARG APP_VERSION=dev
+RUN printf '{"version":"%s"}\n' "$APP_VERSION" > /usr/share/nginx/html/version.json
 
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application code
-COPY . .
-
-# ------------------- Stage 2: Final Stage ------------------------------
-FROM node:21-slim
-
-# Set the working directory to /app
-WORKDIR /app
-
-# Copy built assets and dependencies from frontend-builder stage
-COPY --from=frontend-builder /app .
-
-# Copy the .env.sample file to .env.local
-COPY .env.docker .env.local
-
-# Expose port 5173 for the Node.js application
-EXPOSE 5173
-
-# Define the default command to run the application in development mode
-CMD ["npm", "run", "dev", "--", "--host"]
+EXPOSE 80

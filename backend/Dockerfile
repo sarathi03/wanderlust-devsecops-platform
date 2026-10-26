@@ -1,31 +1,18 @@
-# Stage 1
-FROM node:21 AS backend-builder
+FROM node:22-alpine
 
-# setup the working dir
 WORKDIR /app
+ENV NODE_ENV=production
 
-# code
-COPY . .
+# Install dependencies first so Docker can cache this layer between builds.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# packages install
-RUN npm i
+COPY src ./src
 
-# tests
-RUN npm run test
+# The CI pipeline passes the image tag here, so the running app knows its version.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 
-# Stage 2
-FROM node:21-slim
-
-# setup the working dir
-WORKDIR /app
-
-# copy the above stage as compressed
-COPY --from=backend-builder /app .
-
-COPY .env.docker .env
-
-# Port
+USER node
 EXPOSE 8080
-
-# App
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

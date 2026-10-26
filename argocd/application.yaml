@@ -1,0 +1,23 @@
+# Argo CD Application: tells Argo CD WHAT to deploy (the kubernetes/ folder of this repo)
+# and WHERE (the EKS cluster Argo CD itself runs in, namespace "wanderlust").
+#
+# Apply once, AFTER the first successful CD run (so real image names are in Git):
+#   kubectl apply -f argocd/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wanderlust
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sarathi03/wanderlust-devsecops-platform.git
+    targetRevision: main
+    path: kubernetes
+  destination:
+    server: https://kubernetes.default.svc   # "in-cluster" = the EKS cluster Argo CD is installed in
+    namespace: wanderlust
+  syncPolicy:
+    automated:
+      prune: true      # delete cluster resources that were removed from Git
+      selfHeal: true   # revert manual kubectl edits, so Git stays the single source of truth

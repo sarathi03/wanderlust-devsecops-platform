@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wanderlust · CI/CD Demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Wanderlust</h1>
+    <p class="subtitle">Deployed by Jenkins → Docker Hub → GitHub → Argo CD → EKS</p>
+
+    <section class="cards">
+      <div class="card">
+        <h2>Frontend</h2>
+        <p>Version: <strong id="frontend-version">loading…</strong></p>
+      </div>
+      <div class="card">
+        <h2>Backend</h2>
+        <p>Version: <strong id="backend-version">loading…</strong></p>
+        <p>Served by pod: <code id="backend-pod">loading…</code></p>
+      </div>
+    </section>
+
+    <h2>Destinations</h2>
+    <ul id="destinations"><li>loading…</li></ul>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

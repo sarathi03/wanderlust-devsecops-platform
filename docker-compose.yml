@@ -1,40 +1,21 @@
+# Local test of the two images, before involving Jenkins or Kubernetes.
+#   docker compose up --build      then open http://localhost:8000
 services:
-  mongodb:
-    container_name: mongo-service
-    image: mongo:7
-    restart: unless-stopped
-    volumes:
-      - mongo_data:/data/db
+  # Same name as the Kubernetes Service, so frontend/nginx.conf works in both places.
+  backend-service:
+    build:
+      context: ./backend
+      args:
+        APP_VERSION: local
     ports:
-      - "27017:27017"
-
-  redis:
-    container_name: redis-service
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-
-  backend:
-    container_name: wanderlust-backend
-    build: ./backend
-    env_file:
-      - ./backend/.env.docker
-    ports:
-      - "31100:8080"
-    depends_on:
-      - mongodb
-      - redis
+      - "8080:8080"
 
   frontend:
-    container_name: wanderlust-frontend
-    build: ./frontend
-    env_file:
-      - ./frontend/.env.docker
+    build:
+      context: ./frontend
+      args:
+        APP_VERSION: local
     ports:
-      - "5173:5173"
+      - "8000:80"
     depends_on:
-      - backend
-
-volumes:
-  mongo_data:
+      - backend-service

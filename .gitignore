@@ -1,6 +1,17 @@
+# Dependencies and build output
+node_modules/
 
-# Local environment and generated files
-backend/.env
-backend/node_modules/
-backend/coverage/
-backend/tests/integration/controllers/posts-controller.test.js.backup
+# Pipeline reports (archived in Jenkins, not committed)
+trivy-*.txt
+dependency-check-report.*
+
+# Terraform local state and your personal variables
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+
+# Local env files
+.env
+.env.*

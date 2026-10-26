@@ -6,10 +6,15 @@ metadata:
   labels:
     app: backend
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # never drop below 2 ready pods during an update
+      maxSurge: 1         # start 1 new pod at a time
   template:
     metadata:
       labels:
@@ -17,24 +22,41 @@ spec:
     spec:
       containers:
         - name: backend
-          image: sarathimohan/wanderlust-backend-beta:build-1
+          # Updated automatically by the CD pipeline (scripts/update-image-tags.sh). Do not edit by hand.
+          # DOCKERHUB_USERNAME is a placeholder that the first CD run replaces with your username.
+          image: DOCKERHUB_USERNAME/wanderlust-backend:initial
           ports:
             - containerPort: 8080
-          envFrom:
-            - secretRef:
-                name: wanderlust-backend-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
 ---
+# ClusterIP: reachable only inside the cluster. The frontend's nginx proxies /api/ here.
 apiVersion: v1
 kind: Service
 metadata:
   name: backend-service
   namespace: wanderlust
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: backend
   ports:
     - port: 8080
       targetPort: 8080
       protocol: TCP
-      nodePort: 31100
