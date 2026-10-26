@@ -18,3 +18,16 @@ output "jenkins_url" {
 output "sonarqube_url" {
   value = "http://${aws_instance.master.public_ip}:9000"
 }
+
+output "master_private_ip" {
+  description = "Use this for the SonarQube server URL and webhook inside Jenkins/SonarQube"
+  value       = aws_instance.master.private_ip
+}
+
+output "master_instance_id" {
+  value = aws_instance.master.id
+}
+
+output "worker_instance_id" {
+  value = aws_instance.worker.id
+}

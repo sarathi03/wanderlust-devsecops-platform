@@ -51,6 +51,14 @@ resource "aws_security_group" "master" {
     cidr_blocks = [var.allowed_cidr]
   }
 
+  ingress {
+    description = "SonarQube from inside the VPC (scanner on the Jenkins worker)"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_vpc.default.cidr_block]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
